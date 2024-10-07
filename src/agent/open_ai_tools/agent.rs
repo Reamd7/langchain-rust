@@ -1,3 +1,4 @@
+
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -17,12 +18,14 @@ use crate::{
     tools::Tool,
 };
 
+// 定义 OpenAiToolAgent 结构体，包含一个 Chain 和一个 Tool 的向量
 pub struct OpenAiToolAgent {
     pub(crate) chain: Box<dyn Chain>,
     pub(crate) tools: Vec<Arc<dyn Tool>>,
 }
 
 impl OpenAiToolAgent {
+    // 创建提示信息的方法，返回一个 MessageFormatterStruct 或 AgentError
     pub fn create_prompt(prefix: &str) -> Result<MessageFormatterStruct, AgentError> {
         let prompt = message_formatter![
             fmt_message!(Message::new_system_message(prefix)),
@@ -37,6 +40,7 @@ impl OpenAiToolAgent {
         Ok(prompt)
     }
 
+    // 构造 scratchpad 的方法，将中间步骤转换为 Message 向量
     fn construct_scratchpad(
         &self,
         intermediate_steps: &[(AgentAction, String)],
@@ -44,18 +48,18 @@ impl OpenAiToolAgent {
         let mut thoughts: Vec<Message> = Vec::new();
 
         for (action, observation) in intermediate_steps {
-            // Deserialize directly and embed in method calls to streamline code.
-            // Extract the tool ID and tool calls from the log.
+            // 直接反序列化并嵌入方法调用中以简化代码
+            // 从日志中提取工具 ID 和工具调用
             let LogTools { tool_id, tools } = serde_json::from_str(&action.log)?;
             let tools: Vec<FunctionCallResponse> = serde_json::from_str(&tools)?;
 
-            // For the first action, add an AI message with all tools called in this session.
+            // 对于第一个动作，添加一个包含所有工具调用的 AI 消息
             if thoughts.is_empty() {
                 thoughts.push(Message::new_ai_message("").with_tool_calls(json!(tools)));
             }
 
-            // Add a tool message for each observation. Observation is the ouput of the tool call.
-            // tool_id is the id of the tool.
+            // 为每个观察结果添加一个工具消息。观察结果是工具调用的输出。
+            // tool_id 是工具的 ID。
             thoughts.push(Message::new_tool_message(observation, tool_id));
         }
 
@@ -63,8 +67,10 @@ impl OpenAiToolAgent {
     }
 }
 
+// 实现 Agent trait 的异步方法
 #[async_trait]
 impl Agent for OpenAiToolAgent {
+    // 规划方法，根据中间步骤和输入生成 AgentEvent
     async fn plan(
         &self,
         intermediate_steps: &[(AgentAction, String)],
@@ -78,16 +84,15 @@ impl Agent for OpenAiToolAgent {
             Ok(tools) => {
                 let mut actions: Vec<AgentAction> = Vec::new();
                 for tool in tools {
-                    //Log tools will be send as log
+                    // 日志工具将作为日志发送
                     let log: LogTools = LogTools {
                         tool_id: tool.id.clone(),
-                        tools: output.clone(), //We send the complete tools ouput, we will need it in
-                                               //the open ai call
+                        tools: output.clone(), // 我们发送完整的工具输出，在 open ai 调用中需要它
                     };
                     actions.push(AgentAction {
                         tool: tool.function.name.clone(),
                         tool_input: tool.function.arguments.clone(),
-                        log: serde_json::to_string(&log)?, //We send this as string to minimise changes
+                        log: serde_json::to_string(&log)?, // 我们将其作为字符串发送以最小化更改
                     });
                 }
                 return Ok(AgentEvent::Action(actions));
@@ -96,6 +101,7 @@ impl Agent for OpenAiToolAgent {
         }
     }
 
+    // 获取工具的方法，返回工具的向量
     fn get_tools(&self) -> Vec<Arc<dyn Tool>> {
         self.tools.clone()
     }
